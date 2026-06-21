@@ -7,7 +7,15 @@
 // shared SECRET prevents random internet traffic from using this as a free screenshot proxy.
 
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
+
+// Using puppeteer-core + @sparticuz/chromium instead of plain puppeteer: plain puppeteer
+// downloads its Chrome binary to a separate cache directory at install time, which Render's
+// Node buildpack doesn't reliably carry over from the build step into the actual running
+// container ("Could not find Chrome" at runtime despite a successful build). Sparticuz's
+// Chromium ships as a real file inside node_modules, so it's guaranteed to be present
+// wherever node_modules itself ends up.
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,16 +26,17 @@ const SECRET = process.env.SCREENSHOT_SECRET;
 let browserPromise = null;
 function getBrowser() {
     if (!browserPromise) {
-        browserPromise = puppeteer.launch({
-            headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage', // free-tier containers often have a tiny /dev/shm
-                '--disable-gpu',
-                '--single-process', // trades some stability for a meaningfully smaller memory footprint
-            ],
-        });
+        browserPromise = (async () => {
+            const executablePath = await chromium.executablePath();
+            return puppeteer.launch({
+                executablePath,
+                headless: chromium.headless,
+                args: [
+                    ...chromium.args,
+                    '--disable-dev-shm-usage', // free-tier containers often have a tiny /dev/shm
+                ],
+            });
+        })();
     }
     return browserPromise;
 }
