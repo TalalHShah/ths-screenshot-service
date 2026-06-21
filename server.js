@@ -90,12 +90,14 @@ app.get('/screenshot', async (req, res) => {
             }
         }
 
+                // Free-tier CPU is slow at compositing/encoding a tall table — this isn't a hang risk
+        // like network waits, just bounded work that needs more time than a typical request.
         const buffer = await withTimeout(page.screenshot({
             type: 'jpeg',
             quality: 90,
             clip,
             fullPage: !clip,
-        }), 10000, 'Screenshot capture');
+        }), 25000, 'Screenshot capture');
 
         res.set('Content-Type', 'image/jpeg');
         res.send(buffer);
