@@ -102,7 +102,7 @@ app.get('/screenshot', async (req, res) => {
             quality: 90,
             clip,
             fullPage: !clip,
-        }), 25000, 'Screenshot capture');
+        }), 45000, 'Screenshot capture');
 
         res.set('Content-Type', 'image/jpeg');
         res.send(buffer);
