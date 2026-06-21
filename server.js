@@ -69,11 +69,20 @@ app.get('/screenshot', async (req, res) => {
         const browser = await withTimeout(getBrowser(), 15000, 'Browser launch');
         page = await browser.newPage();
         await page.setViewport({ width: 1300, height: 1000, deviceScaleFactor: 1 });
-        await withTimeout(page.goto(url, { waitUntil: 'networkidle0', timeout: 20000 }), 22000, 'Page navigation');
+        // networkidle0 waits for ZERO active network connections for 500ms — a page with an
+        // autoplaying/looping background video or audio track never satisfies that condition,
+        // since the browser keeps streaming it indefinitely. Waiting for DOM-ready plus the
+        // specific element we actually need is what matters for a screenshot, not total
+        // network silence.
+        await withTimeout(page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }), 17000, 'Page navigation');
 
         let clip;
         if (selector) {
-            await page.waitForSelector(selector, { timeout: 5000 }).catch(() => {});
+            await page.waitForSelector(selector, { timeout: 8000 }).catch(() => {});
+            // A short settle delay lets fonts/images inside the target element finish
+            // rendering after it first appears in the DOM, without waiting on the page's
+            // unrelated background media.
+            await new Promise(r => setTimeout(r, 800));
             const el = await page.$(selector);
             if (el) {
                 const box = await el.boundingBox();
