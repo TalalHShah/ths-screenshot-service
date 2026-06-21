@@ -42,7 +42,10 @@ function getBrowser() {
             browser.on('disconnected', () => { browserPromise = null; });
             return browser;
         })();
-        browserPromise.catch(() => { browserPromise = null; });
+        browserPromise.catch((err) => {
+            console.error('Browser launch failed:', err);
+            browserPromise = null;
+        });
     }
     return browserPromise;
 }
@@ -66,7 +69,9 @@ app.get('/screenshot', async (req, res) => {
 
     let page;
     try {
-        const browser = await withTimeout(getBrowser(), 15000, 'Browser launch');
+        // Repeated launch timeouts at 15s suggest the free-tier CPU genuinely needs more time
+        // for Chromium to start, not that it's stuck — widening this before assuming it's broken.
+        const browser = await withTimeout(getBrowser(), 40000, 'Browser launch');
         page = await browser.newPage();
         await page.setViewport({ width: 1300, height: 1000, deviceScaleFactor: 1 });
         // networkidle0 waits for ZERO active network connections for 500ms — a page with an
@@ -90,7 +95,7 @@ app.get('/screenshot', async (req, res) => {
             }
         }
 
-                // Free-tier CPU is slow at compositing/encoding a tall table — this isn't a hang risk
+        // Free-tier CPU is slow at compositing/encoding a tall table — this isn't a hang risk
         // like network waits, just bounded work that needs more time than a typical request.
         const buffer = await withTimeout(page.screenshot({
             type: 'jpeg',
