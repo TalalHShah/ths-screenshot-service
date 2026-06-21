@@ -1,0 +1,16 @@
+{
+  "name": "ths-screenshot-service",
+  "version": "1.0.0",
+  "description": "Self-hosted screenshot service for thsplay.com's leaderboard Capture Graphic feature.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "puppeteer": "^22.12.1"
+  }
+}
