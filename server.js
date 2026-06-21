@@ -22,23 +22,39 @@ const PORT = process.env.PORT || 3000;
 const SECRET = process.env.SCREENSHOT_SECRET;
 
 // One shared browser instance, reused across requests — launching Chromium fresh per request
-// is slow and memory-heavy, which matters a lot on a free tier's limited RAM.
+// is slow and memory-heavy, which matters a lot on a free tier's limited RAM. But a heavier
+// real page (video backgrounds, fonts, animations) can run the browser out of memory and
+// crash it — without recovery, every request after that hangs forever waiting on a dead
+// browser. The 'disconnected' listener resets the cached promise so the next call relaunches
+// a fresh browser instead of reusing a corpse.
 let browserPromise = null;
 function getBrowser() {
     if (!browserPromise) {
         browserPromise = (async () => {
             const executablePath = await chromium.executablePath();
-            return puppeteer.launch({
+            const browser = await puppeteer.launch({
                 executablePath,
                 headless: chromium.headless,
-                args: [
-                    ...chromium.args,
-                    '--disable-dev-shm-usage', // free-tier containers often have a tiny /dev/shm
-                ],
+                // --single-process was dropped: it trades memory for stability, and a single
+                // page crash was taking down the entire shared browser instance with it.
+                args: [...chromium.args, '--disable-dev-shm-usage'],
             });
+            browser.on('disconnected', () => { browserPromise = null; });
+            return browser;
         })();
+        browserPromise.catch(() => { browserPromise = null; });
     }
     return browserPromise;
+}
+
+// A hard ceiling on the whole request, independent of any individual Puppeteer call's own
+// timeout — guarantees the HTTP request always gets SOME response within a bounded time
+// instead of hanging indefinitely if something unexpected stalls.
+function withTimeout(promise, ms, label) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' timed out after ' + ms + 'ms')), ms)),
+    ]);
 }
 
 app.get('/screenshot', async (req, res) => {
@@ -50,10 +66,10 @@ app.get('/screenshot', async (req, res) => {
 
     let page;
     try {
-        const browser = await getBrowser();
+        const browser = await withTimeout(getBrowser(), 15000, 'Browser launch');
         page = await browser.newPage();
-        await page.setViewport({ width: 1300, height: 1000, deviceScaleFactor: 2 });
-        await page.goto(url, { waitUntil: 'networkidle0', timeout: 20000 });
+        await page.setViewport({ width: 1300, height: 1000, deviceScaleFactor: 1 });
+        await withTimeout(page.goto(url, { waitUntil: 'networkidle0', timeout: 20000 }), 22000, 'Page navigation');
 
         let clip;
         if (selector) {
@@ -65,18 +81,18 @@ app.get('/screenshot', async (req, res) => {
             }
         }
 
-        const buffer = await page.screenshot({
+        const buffer = await withTimeout(page.screenshot({
             type: 'jpeg',
             quality: 90,
             clip,
             fullPage: !clip,
-        });
+        }), 10000, 'Screenshot capture');
 
         res.set('Content-Type', 'image/jpeg');
         res.send(buffer);
     } catch (err) {
         console.error('Screenshot error:', err);
-        res.status(502).send('Screenshot failed: ' + err.message);
+        if (!res.headersSent) res.status(502).send('Screenshot failed: ' + err.message);
     } finally {
         if (page) await page.close().catch(() => {});
     }
