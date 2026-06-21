@@ -4,7 +4,8 @@
   "description": "Self-hosted screenshot service for thsplay.com's leaderboard Capture Graphic feature.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "npx puppeteer browsers install chrome"
   },
   "engines": {
     "node": ">=18"
